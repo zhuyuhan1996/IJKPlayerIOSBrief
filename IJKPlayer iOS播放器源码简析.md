@@ -1,4 +1,4 @@
-# IJKPlayer iOS播放器源码简析
+IJKPlayer iOS播放器源码简析
 
 简介：一个基于FFmpeg的播放器。
 
@@ -437,6 +437,87 @@ MPMoviePlayerController提供的播放器具有高度的封装性，功能也相
     IJKMPMoviePlayerSeekVideoStartNotification
     // 可以根据具体的需求来查看相关的通知的作用。
     ```
+  
+  ### https
+  
+  - 开发的过程中，切换到IJKFFMoviePlayerController后，发现视频只有声音没有画面
+  - 调试之后发现是因为当前使用的IJKPlayer不支持https的请求，根据IJKPlayer集成文档，重新生成了新的支持https的framework
+  
+  具体的调试过程：
+  
+  - 运行IJKMediaDemo工程，替换为https视频链接，发现会报IJKMPMovieFinishReasonPlaybackError的错误，
+  
+  - 通过阅读源码和查资料：
+  
+    - IJKPlayer的主要控制器为：ff_ffplay.c,主要有三大类线程，读线程（read_thread），解码线程和渲染线程，所有的回调消息都是在读线程抛出，主要有两类：错误和成功，对应的代码为FFP_MSG_ERROR和FFP_MSG_COMPLETED
+  
+    - ```objective-c
+      // Error 有6处：
+      // 1、创建对象互斥锁，一般都不会失败
+      SDL_mutex *wait_mutex = SDL_CreateMutex();
+      
+      if (!wait_mutex) {
+        av_log(NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
+        ret = AVERROR(ENOMEM);
+        goto fail;
+      }
+      
+      // 2、播放器的全局准备（调用av_malloc()为AVFormatContext结构体分配了内存,而且同时也给AVFormatContext中的internal字段分配内存），一般不会失败
+      ic = avformat_alloc_context();
+      if (!ic) {
+        av_log(NULL, AV_LOG_FATAL, "Could not allocate context.\n");
+        ret = AVERROR(ENOMEM);
+        goto fail;
+      }
+      
+      // 3、打开Url失败：一般是url已经超时失效了，或者是有个错误的url
+      err = avformat_open_input(&ic, is->filename, is->iformat, &ffp->format_opts);
+      if (err < 0) {
+        print_error(is->filename, err);
+        ret = -1;
+        goto fail;
+      }
+      
+      // 4、探测数据失败，拿不到视频解码信息和宽高之类的， 一般不会失败
+       err = avformat_find_stream_info(ic, opts);
+      
+      for (i = 0; i < orig_nb_streams; i++)
+      	av_dict_free(&opts[i]);
+      av_freep(&opts);
+      
+      if (err < 0) {
+      	av_log(NULL, AV_LOG_WARNING,
+      	"%s: could not find codec parameters\n", is->filename);
+      	ret = -1;
+      	//ffp->last_error = last_error;
+      	goto fail;
+      }
+      
+      // 5、没有音视频流。这种情况是链接有效，但是不是可播放链接
+      if (is->video_stream < 0 && is->audio_stream < 0) {
+        av_log(NULL, AV_LOG_FATAL, "Failed to open file '%s' or configure filtergraph\n",
+        is->filename);
+        ret = -1;
+        goto fail;
+      }
+      
+      // 6、循环收数据流的消息其实很简单，只有1处：当没有数据了，流断开了（具体场景可能是你的wifi断了，主播断了等等等）
+      //http network cut
+      if (ffp->error) { 
+           ffp_notify_msg1(ffp, FFP_MSG_ERROR);
+      } else { 
+           ffp_notify_msg1(ffp, FFP_MSG_COMPLETED);
+      }
+      // 当没流数据的时候，
+      // 如果数据异常ffp->error，那么就是ERROR，
+      // 否则就是COMPLETED。
+      ```
+  
+    - 调试发现错误为打开Url失败，在状态栏会输出https protocol not support, 重新生成一份支持https的就好了
+  
+  ### 问题和发现
+  
+  - IJKFFMoviePlayerController首次打开音视频较慢，需要较长的加载时间，怀疑是初次初始化需要时间（解码设置、options相关的设置）
 
 ## 状态转移
 
@@ -524,5 +605,11 @@ IJKMPMediaPlaybackIsPreparedToPlayDidChangeNotification; // 播放状态的改�
 - [iOS集成IJKPlayer播放器](https://www.jianshu.com/p/818a7ac2639d)
 
 - [FFmpeg](http://ffmpeg.org/)
+
+- [ijkplayer回调消息处理方案](https://www.jianshu.com/p/4f1a42f3986a)
+
+- [iOS - ijkplayer集成](https://juejin.cn/post/6844904202301341704)
+
+- [iOS - ijkplayer集成【二】](https://juejin.cn/post/6844904205291880456)
 
   
