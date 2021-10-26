@@ -1,4 +1,4 @@
-IJKPlayer iOS播放器源码简析
+# IJKPlayer iOS播放器源码简析
 
 简介：一个基于FFmpeg的播放器。
 
@@ -518,6 +518,7 @@ MPMoviePlayerController提供的播放器具有高度的封装性，功能也相
   ### 问题和发现
   
   - IJKFFMoviePlayerController首次打开音视频较慢，需要较长的加载时间，怀疑是初次初始化需要时间（解码设置、options相关的设置）
+  - IJKFFMoviePlayerController生成的armv7 framework的过程会报错，所以才用了一个空实现的armv7的framework进行了合并，在armv7上不支持该播放器
 
 ## 状态转移
 
